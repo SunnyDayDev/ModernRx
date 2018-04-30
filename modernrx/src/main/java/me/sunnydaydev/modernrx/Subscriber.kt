@@ -18,12 +18,13 @@ abstract class Subscriber {
             onComplete: (() -> Unit)? = null): AnyObserver<T> {
 
 
-        val subscriberPackage = this::class.java.`package`.name
+        val subscriberPackage = BuildConfig.APPLICATION_ID
 
-        val line = Thread.currentThread().stackTrace
-                .dropWhile { !it.className.startsWith(subscriberPackage) }
-                .dropWhile { it.className.startsWith(subscriberPackage) }
-                .first()
+        val stackTrace = Thread.currentThread().stackTrace
+        val lastModernRxLine = stackTrace.indexOfLast {
+            it.className.startsWith(subscriberPackage)
+        }
+        val line = stackTrace[lastModernRxLine + 1]
 
         val errorHandler: (Throwable) -> Unit = lambda@ {
 
