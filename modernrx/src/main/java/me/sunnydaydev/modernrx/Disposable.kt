@@ -3,52 +3,74 @@ package me.sunnydaydev.modernrx
 import io.reactivex.*
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
-import java.util.*
+import org.reactivestreams.Subscription
 import java.util.concurrent.atomic.AtomicReference
+import kotlin.properties.Delegates
 
 /**
  * Created by sashka on 02.03.17.
  *
- *
  * mail: sunnyday.development@gmail.com
  */
-class DisposableBag {
 
-    private val disposables = HashSet<Disposable>()
-    private val bags = HashSet<DisposableBag>()
+class DisposableBag(
+        enabled: Boolean = true,
+        disposables: Set<Disposable> = mutableSetOf(),
+        bags: Set<DisposableBag> = mutableSetOf()
+): Disposable {
+
+    private val disposables: MutableSet<Disposable> = disposables.toMutableSet()
+    private val bags: MutableSet<DisposableBag> = bags.toMutableSet()
+
+    var enabled: Boolean by Delegates.observable(true) { _, _, value ->
+        if (!value) { dispose() }
+        bags.forEach { it.enabled = value }
+    }
 
     private val lock = Any()
 
-    constructor()
-
-    constructor(vararg bags: DisposableBag) : super() {
-        bags.forEach { addBag(it) }
+    init {
+        this.enabled = enabled
     }
 
     fun add(disposable: Disposable) {
-        synchronized(lock) { disposables.add(disposable) }
+        synchronized(lock) {
+            if (!enabled) {
+                disposable.dispose()
+                return
+            }
+            disposables.add(disposable)
+        }
     }
 
-    fun addBag(bag: DisposableBag) {
-        synchronized(lock) { bags.add(bag) }
+    fun add(bag: DisposableBag) {
+        synchronized(lock) {
+            bag.enabled = enabled
+            bags.add(bag)
+        }
     }
 
     fun remove(disposable: Disposable) {
         synchronized(lock) { disposables.remove(disposable) }
     }
 
-    fun removeBag(bag: DisposableBag) {
+    fun remove(bag: DisposableBag) {
         synchronized(lock) { bags.remove(bag) }
     }
 
-    fun dispose() {
+    override fun isDisposed(): Boolean {
+        synchronized(lock) {
+            return bags.isEmpty() && disposables.isEmpty() ||
+                    bags.all { it.isDisposed } && disposables.all { it.isDisposed }
+        }
+    }
+
+    override fun dispose() {
 
         synchronized(lock) {
 
-            val disposables = this.disposables.toSet()
-                    .also { this.disposables.clear() }
-
             disposables.forEach { it.dispose() }
+            disposables.removeAll { it !is OptionalDisposable }
 
             bags.forEach { it.dispose() }
 
@@ -119,10 +141,17 @@ fun <T> Observable<T>.disposeBy(bag: DisposableBag): Observable<T> = compose { b
 
 fun <T> Flowable<T>.disposeBy(bag: DisposableBag): Flowable<T> = compose { bag.track(it) }
 
+fun Disposable.disposedBy(bag: DisposableBag) { bag.add(this) }
 
-class OptionalDisposable {
 
-    var value: Disposable? = null
+class OptionalDisposable(
+        autoDispose: Boolean = true
+): Disposable {
+
+    var value by Delegates.observable<Disposable?>(null) { _, prev, _ ->
+        prev ?: return@observable
+        if (autoDispose && !prev.isDisposed) prev.dispose()
+    }
 
     fun track(upstream: Completable): Completable {
         return upstream.doOnSubscribe { value = it }
@@ -149,8 +178,12 @@ class OptionalDisposable {
                 .doFinally { value = null }
     }
 
+    override fun isDisposed(): Boolean {
+        return value?.isDisposed ?: true
+    }
+
     @Synchronized
-    fun disposeAndClear() {
+    override fun dispose() {
         value?.dispose()
         value = null
     }
@@ -166,3 +199,28 @@ fun <T> Single<T>.disposeBy(disposable: OptionalDisposable): Single<T> = compose
 fun <T> Observable<T>.disposeBy(disposable: OptionalDisposable): Observable<T> = compose { disposable.track(it) }
 
 fun <T> Flowable<T>.disposeBy(disposable: OptionalDisposable): Flowable<T> = compose { disposable.track(it) }
+
+fun Disposable.disposeBy(disposable: OptionalDisposable) { disposable.value = this }
+
+
+class SubscriptionDisposable(private val subscription: Subscription) : Disposable, Subscription {
+
+    private var cancelled = true
+
+    override fun dispose() {
+        cancel()
+    }
+
+    override fun isDisposed(): Boolean = cancelled
+
+    override fun cancel() {
+        cancelled = true
+        subscription.cancel()
+    }
+
+    override fun request(n: Long) {
+        cancelled = false
+        subscription.request(n)
+    }
+
+}
