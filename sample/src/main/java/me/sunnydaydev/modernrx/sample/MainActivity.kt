@@ -55,6 +55,15 @@ class MainActivity : AppCompatActivity(), ModernRx {
                 }
                 .request(1000)
 
+        val disabledBag = DisposableBag(false)
+        Observable.interval(1, TimeUnit.SECONDS)
+                .doOnSubscribe { Log.d("Test:Disabled", "Subscribed") }
+                .doOnDispose { Log.d("Test:Disabled", "Disposed") }
+                .disposeBy(disabledBag)
+                .modernSubscribe {
+                    Log.d("Test:Disabled", "Tick $it")
+                }
+
     }
 
     override fun onStop() {

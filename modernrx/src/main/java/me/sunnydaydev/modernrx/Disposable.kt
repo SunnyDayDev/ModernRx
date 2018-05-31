@@ -34,18 +34,17 @@ class DisposableBag(
 
     fun add(disposable: Disposable) {
         synchronized(lock) {
+            disposables.add(disposable)
             if (!enabled) {
                 disposable.dispose()
-                return
             }
-            disposables.add(disposable)
         }
     }
 
     fun add(bag: DisposableBag) {
         synchronized(lock) {
-            bag.enabled = enabled
             bags.add(bag)
+            bag.enabled = enabled
         }
     }
 
@@ -117,12 +116,8 @@ class DisposableBag(
         private var disposable: Disposable? = null
 
         fun onSubscribe(disposable: Disposable) {
-            if (enabled) {
-                this.disposable = disposable
-                add(disposable)
-            } else {
-                disposable.dispose()
-            }
+            this.disposable = disposable
+            add(disposable)
         }
 
         fun onSubscribe(subscription: Subscription) {
