@@ -117,14 +117,16 @@ class DisposableBag(
         private var disposable: Disposable? = null
 
         fun onSubscribe(disposable: Disposable) {
-            this.disposable = disposable
-            add(disposable)
+            if (enabled) {
+                this.disposable = disposable
+                add(disposable)
+            } else {
+                disposable.dispose()
+            }
         }
 
         fun onSubscribe(subscription: Subscription) {
-            val subscriptionDisposable = SubscriptionDisposable(subscription)
-            this.disposable = subscriptionDisposable
-            add(subscriptionDisposable)
+            onSubscribe(SubscriptionDisposable(subscription) as Disposable)
         }
 
         fun onFinally() {
