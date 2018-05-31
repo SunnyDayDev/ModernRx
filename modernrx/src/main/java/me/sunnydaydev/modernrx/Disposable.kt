@@ -4,7 +4,6 @@ import io.reactivex.*
 import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
 import org.reactivestreams.Subscription
-import java.util.concurrent.atomic.AtomicReference
 import kotlin.properties.Delegates
 
 /**
@@ -15,8 +14,8 @@ import kotlin.properties.Delegates
 
 class DisposableBag(
         enabled: Boolean = true,
-        disposables: Set<Disposable> = mutableSetOf(),
-        bags: Set<DisposableBag> = mutableSetOf()
+        disposables: Set<Disposable> = emptySet(),
+        bags: Set<DisposableBag> = emptySet()
 ): Disposable {
 
     private val disposables: MutableSet<Disposable> = disposables.toMutableSet()
@@ -78,74 +77,79 @@ class DisposableBag(
 
     }
 
-    fun track(upstream: Completable): Completable {
-        val disposableHolder = AtomicReference<Disposable?>(null)
-        return upstream
-                .doOnSubscribe { disposable ->
-                    disposableHolder.set(disposable)
-                    add(disposable)
-                }
-                .doFinally { disposableHolder.get()?.let { remove(it) } }
+    fun trackCompletable() = CompletableTransformer { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Single<T>): Single<T> {
-        val disposableHolder = AtomicReference<Disposable?>(null)
-        return upstream
-                .doOnSubscribe { disposable ->
-                    disposableHolder.set(disposable)
-                    add(disposable)
-                }
-                .doFinally { disposableHolder.get()?.let { remove(it) } }
+    fun <T> trackMaybe() = MaybeTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Maybe<T>): Maybe<T> {
-        val disposableHolder = AtomicReference<Disposable?>(null)
-        return upstream
-                .doOnSubscribe { disposable ->
-                    disposableHolder.set(disposable)
-                    add(disposable)
-                }
-                .doFinally { disposableHolder.get()?.let { remove(it) } }
+    fun <T> trackSingle() = SingleTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Observable<T>): Observable<T> {
-        val disposableHolder = AtomicReference<Disposable?>(null)
-        return upstream
-                .doOnSubscribe { disposable ->
-                    disposableHolder.set(disposable)
-                    add(disposable)
-                }
-                .doFinally { disposableHolder.get()?.let { remove(it) }  }
+    fun <T> trackObservable(): ObservableTransformer<T, T> = ObservableTransformer { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Flowable<T>): Flowable<T> {
-        val disposableHolder = AtomicReference<Disposable?>(null)
-        return upstream
-                .doOnSubscribe { subscription ->
-                    val disposable = SubscriptionDisposable(subscription)
-                    disposableHolder.set(disposable)
-                    add(disposable)
-                }
-                .doFinally { disposableHolder.get()?.let { remove(it) }  }
+    fun <T> trackFlowable() = FlowableTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
+    }
+
+    internal inner class DisposableActor {
+
+        private var disposable: Disposable? = null
+
+        fun onSubscribe(disposable: Disposable) {
+            this.disposable = disposable
+            add(disposable)
+        }
+
+        fun onSubscribe(subscription: Subscription) {
+            val subscriptionDisposable = SubscriptionDisposable(subscription)
+            this.disposable = subscriptionDisposable
+            add(subscriptionDisposable)
+        }
+
+        fun onFinally() {
+            disposable?.run { remove(this) }
+        }
+
     }
 
 }
 
-fun Completable.disposeBy(bag: DisposableBag): Completable = compose { bag.track(it) }
+fun Completable.disposeBy(bag: DisposableBag): Completable = compose(bag.trackCompletable())
 
-fun <T> Maybe<T>.disposeBy(bag: DisposableBag): Maybe<T> = compose { bag.track(it) }
+fun <T> Maybe<T>.disposeBy(bag: DisposableBag): Maybe<T> = compose(bag.trackMaybe())
 
-fun <T> Single<T>.disposeBy(bag: DisposableBag): Single<T> = compose { bag.track(it) }
+fun <T> Single<T>.disposeBy(bag: DisposableBag): Single<T> = compose(bag.trackSingle())
 
-fun <T> Observable<T>.disposeBy(bag: DisposableBag): Observable<T> = compose { bag.track(it) }
+fun <T> Observable<T>.disposeBy(bag: DisposableBag): Observable<T> = compose(bag.trackObservable())
 
-fun <T> Flowable<T>.disposeBy(bag: DisposableBag): Flowable<T> = compose { bag.track(it) }
+fun <T> Flowable<T>.disposeBy(bag: DisposableBag): Flowable<T> = compose(bag.trackFlowable())
 
-fun Disposable.disposedBy(bag: DisposableBag) { bag.add(this) }
+fun Disposable.disposeBy(bag: DisposableBag) { bag.add(this) }
 
 
 class OptionalDisposable(
-        autoDispose: Boolean = true
+        private val autoDispose: Boolean = true
 ): Disposable {
 
     var value by Delegates.observable<Disposable?>(null) { _, prev, _ ->
@@ -153,29 +157,39 @@ class OptionalDisposable(
         if (autoDispose && !prev.isDisposed) prev.dispose()
     }
 
-    fun track(upstream: Completable): Completable {
-        return upstream.doOnSubscribe { value = it }
-                .doFinally { value = null }
+    fun trackCompletable() = CompletableTransformer { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Maybe<T>): Maybe<T> {
-        return upstream.doOnSubscribe { value = it }
-                .doFinally { value = null }
+    fun <T> trackMaybe() = MaybeTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Single<T>): Single<T> {
-        return upstream.doOnSubscribe { value = it }
-                .doFinally { value = null }
+    fun <T> trackSingle() = SingleTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Observable<T>): Observable<T> {
-        return upstream.doOnSubscribe { value = it }
-                .doFinally { value = null }
+    fun <T> trackObservable() = ObservableTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
-    fun <T> track(upstream: Flowable<T>): Flowable<T> {
-        return upstream.doOnSubscribe { value = SubscriptionDisposable(it) }
-                .doFinally { value = null }
+    fun <T> trackFlowable() = FlowableTransformer<T, T> { upstream ->
+        val actor = DisposableActor()
+        upstream
+                .doOnSubscribe(actor::onSubscribe)
+                .doFinally(actor::onFinally)
     }
 
     override fun isDisposed(): Boolean {
@@ -184,28 +198,51 @@ class OptionalDisposable(
 
     @Synchronized
     override fun dispose() {
-        value?.dispose()
+        if (!autoDispose) {
+            value?.dispose()
+        }
         value = null
+    }
+
+    internal inner class DisposableActor {
+
+        fun onSubscribe(disposable: Disposable) {
+            value = disposable
+        }
+
+        fun onSubscribe(subscription: Subscription) {
+            value = SubscriptionDisposable(subscription)
+        }
+
+        fun onFinally() {
+            value = null
+        }
+
     }
 
 }
 
-fun Completable.disposeBy(disposable: OptionalDisposable): Completable = compose { disposable.track(it) }
+fun Completable.disposeBy(disposable: OptionalDisposable): Completable =
+        compose(disposable.trackCompletable())
 
-fun <T> Maybe<T>.disposeBy(disposable: OptionalDisposable): Maybe<T> = compose { disposable.track(it) }
+fun <T> Maybe<T>.disposeBy(disposable: OptionalDisposable): Maybe<T> =
+        compose(disposable.trackMaybe())
 
-fun <T> Single<T>.disposeBy(disposable: OptionalDisposable): Single<T> = compose { disposable.track(it) }
+fun <T> Single<T>.disposeBy(disposable: OptionalDisposable): Single<T> =
+        compose(disposable.trackSingle())
 
-fun <T> Observable<T>.disposeBy(disposable: OptionalDisposable): Observable<T> = compose { disposable.track(it) }
+fun <T> Observable<T>.disposeBy(disposable: OptionalDisposable): Observable<T> =
+        compose(disposable.trackObservable())
 
-fun <T> Flowable<T>.disposeBy(disposable: OptionalDisposable): Flowable<T> = compose { disposable.track(it) }
+fun <T> Flowable<T>.disposeBy(disposable: OptionalDisposable): Flowable<T> =
+        compose(disposable.trackFlowable())
 
 fun Disposable.disposeBy(disposable: OptionalDisposable) { disposable.value = this }
 
 
 class SubscriptionDisposable(private val subscription: Subscription) : Disposable, Subscription {
 
-    private var cancelled = true
+    private var cancelled = false
 
     override fun dispose() {
         cancel()

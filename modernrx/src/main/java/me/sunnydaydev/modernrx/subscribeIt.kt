@@ -104,20 +104,14 @@ class UnhandledErrorException(line: StackTraceElement, cause: Throwable):
 
 }
 
-class SuccessErrorHandler(private val action: (Throwable) -> Unit): ErrorHandler {
+class SimpleErrorHandler(
+        private val errorHandled: Boolean,
+        private val action: (Throwable) -> Unit
+): ErrorHandler {
 
     override fun invoke(p1: Throwable): Boolean {
         action(p1)
-        return true
-    }
-
-}
-
-class FailErrorHandler(private val action: (Throwable) -> Unit): ErrorHandler {
-
-    override fun invoke(p1: Throwable): Boolean {
-        action(p1)
-        return false
+        return errorHandled
     }
 
 }
