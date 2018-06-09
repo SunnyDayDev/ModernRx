@@ -80,26 +80,28 @@ private fun checkedErrorHandler(onError: ErrorHandler?): PureErrorHandler {
     val subscriberPackage = BuildConfig.APPLICATION_ID
 
     val stackTrace = Thread.currentThread().stackTrace
+
     val lastModernRxLine = stackTrace.indexOfLast {
         it.className.startsWith(subscriberPackage)
     }
-    val line = stackTrace[lastModernRxLine + 1]
+
+    val clearedStackTrace = stackTrace.drop(lastModernRxLine + 1).toTypedArray()
 
     return lambda@ {
 
         if (onError?.invoke(it) == true) return@lambda
 
-        RxJavaPlugins.onError(UnhandledErrorException(line, it))
+        RxJavaPlugins.onError(UnhandledErrorException(clearedStackTrace, it))
 
     }
 
 }
 
-class UnhandledErrorException(line: StackTraceElement, cause: Throwable):
+class UnhandledErrorException(stackTrace: Array<StackTraceElement>, cause: Throwable):
         Throwable("Unhandled subscriber error: ${cause.message}", cause) {
 
     init {
-        stackTrace = arrayOf(line)
+        this.stackTrace = stackTrace
     }
 
 }
