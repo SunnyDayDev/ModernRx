@@ -111,6 +111,9 @@ class SimpleErrorHandler(
         private val action: (Throwable) -> Unit
 ): ErrorHandler {
 
+    constructor(errorHandled: Boolean, pureAction: () -> Unit):
+            this(errorHandled, { _ -> pureAction() })
+
     override fun invoke(p1: Throwable): Boolean {
         action(p1)
         return errorHandled
