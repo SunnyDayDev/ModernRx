@@ -1,4 +1,3 @@
-[![](https://jitpack.io/v/SunnyDayDev/ModernRx.svg)](https://jitpack.io/#SunnyDayDev/ModernRx)
+[![](https://jitpack.io/v/me.sunnydaydev/modern-rx.svg)](https://jitpack.io/#me.sunnydaydev/modern-rx)
 ### ModernRx
-A helper for use the Rx on Android projects. Now you don't loose any unhandled errors.
-Mostly usable on Kotlin.
+A helper for use the Rx on Android projects.
