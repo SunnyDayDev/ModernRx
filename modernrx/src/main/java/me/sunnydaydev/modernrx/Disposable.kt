@@ -21,19 +21,22 @@ class DisposableBag(
     private val disposables: MutableSet<Disposable> = disposables.toMutableSet()
     private val bags: MutableSet<DisposableBag> = bags.toMutableSet()
 
+    @get:Synchronized
+    @set:Synchronized
     var enabled: Boolean by Delegates.observable(true) { _, _, value ->
-        if (!value) { dispose() }
-        bags.forEach { it.enabled = value }
+        if (!value) dispose()
+        bags.toSet().forEach { it.enabled = value }
     }
-
-    private val lock = Any()
 
     init {
         this.enabled = enabled
     }
 
+    @Synchronized
     fun add(disposable: Disposable) {
-        synchronized(lock) {
+        if (disposable is DisposableBag) {
+            add(bag = disposable)
+        } else {
             disposables.add(disposable)
             if (!enabled) {
                 disposable.dispose()
@@ -41,38 +44,41 @@ class DisposableBag(
         }
     }
 
+    @Synchronized
     fun add(bag: DisposableBag) {
-        synchronized(lock) {
-            bags.add(bag)
-            bag.enabled = enabled
-        }
+        bags.add(bag)
+        bag.enabled = enabled
     }
 
+    @Synchronized
     fun remove(disposable: Disposable) {
-        synchronized(lock) { disposables.remove(disposable) }
+        if (disposable is DisposableBag) remove(bag = disposable)
+        else disposables.remove(disposable)
     }
 
+
+    @Synchronized
     fun remove(bag: DisposableBag) {
-        synchronized(lock) { bags.remove(bag) }
+        bags.remove(bag)
     }
 
-    override fun isDisposed(): Boolean {
-        synchronized(lock) {
-            return bags.isEmpty() && disposables.isEmpty() ||
-                    bags.all { it.isDisposed } && disposables.all { it.isDisposed }
-        }
-    }
+    @Synchronized
+    override fun isDisposed(): Boolean = bags.isEmpty() && disposables.isEmpty() ||
+            bags.all { it.isDisposed } && disposables.all { it.isDisposed }
 
+    @Synchronized
     override fun dispose() {
 
-        synchronized(lock) {
+        val currentDisposables = disposables.toSet()
+        val currentBags = bags.toSet()
 
-            disposables.forEach { it.dispose() }
-            disposables.removeAll { it !is OptionalDisposable }
+        currentDisposables.forEach { it.dispose() }
+        currentBags.forEach { it.dispose() }
 
-            bags.forEach { it.dispose() }
+        val disposedForever = currentDisposables
+                .filter { it !is OptionalDisposable }
 
-        }
+        disposables.removeAll(disposedForever)
 
     }
 
@@ -189,6 +195,7 @@ class OptionalDisposable(
                 .doFinally(actor::onFinally)
     }
 
+    @Synchronized
     override fun isDisposed(): Boolean {
         return value?.isDisposed ?: true
     }
