@@ -13,12 +13,11 @@ import java.util.concurrent.atomic.AtomicReference
  */
 
 typealias SubscribeHandler = (Disposable) -> Unit
-typealias ErrorHandler = (Throwable) -> Boolean
 typealias ResultHandler<T> = (T) -> Unit
 typealias CompleteHandler = () -> Unit
 internal typealias PureErrorHandler = (Throwable) -> Unit
 
-private class ModernRxObserver<T> internal constructor(
+private class ModernRxObserver<T> internal  constructor(
         private val subscribe: SubscribeHandler?,
         private val result: ResultHandler<T>?,
         private val complete: CompleteHandler?,
@@ -60,6 +59,40 @@ private class ModernRxObserver<T> internal constructor(
 
 }
 
+interface ErrorHandler {
+
+    fun handle(error: Throwable): Boolean
+
+    companion object {
+
+        operator fun invoke(action: () -> Boolean): ErrorHandler = object: ErrorHandler {
+
+            override fun handle(error: Throwable): Boolean = action()
+
+        }
+
+        fun handled(action: () -> Unit): ErrorHandler = object: ErrorHandler {
+
+            override fun handle(error: Throwable): Boolean {
+                action()
+                return true
+            }
+
+        }
+
+        fun failed(action: () -> Unit): ErrorHandler = object: ErrorHandler {
+
+            override fun handle(error: Throwable): Boolean {
+                action()
+                return false
+            }
+
+        }
+
+    }
+
+}
+
 private fun <T> subscribeItObserver(
         onSubscribe: SubscribeHandler? = null,
         onResult: ResultHandler<T>? = null,
@@ -85,38 +118,21 @@ private fun checkedErrorHandler(onError: ErrorHandler?): PureErrorHandler {
         it.className.startsWith(subscriberPackage)
     }
 
-    val clearedStackTrace = stackTrace.drop(lastModernRxLine + 1).toTypedArray()
+    val subscribeStackTrace = stackTrace.drop(lastModernRxLine + 1)
 
     return lambda@ {
 
-        if (onError?.invoke(it) == true) return@lambda
+        ModernRxUtil.putErrorInfo(
+                it,
+                ErrorInfo(subscribeStackTrace = subscribeStackTrace)
+        )
 
-        RxJavaPlugins.onError(UnhandledErrorException(clearedStackTrace, it))
+        val handled = onError?.handle(it) == true
 
-    }
+        if (!handled) {
+            RxJavaPlugins.onError(it)
+        }
 
-}
-
-class UnhandledErrorException(stackTrace: Array<StackTraceElement>, cause: Throwable):
-        Throwable("Unhandled subscriber error: ${cause.message}", cause) {
-
-    init {
-        this.stackTrace = stackTrace
-    }
-
-}
-
-class SimpleErrorHandler(
-        private val errorHandled: Boolean,
-        private val action: (Throwable) -> Unit
-): ErrorHandler {
-
-    constructor(errorHandled: Boolean, pureAction: () -> Unit):
-            this(errorHandled, { _ -> pureAction() })
-
-    override fun invoke(p1: Throwable): Boolean {
-        action(p1)
-        return errorHandled
     }
 
 }
