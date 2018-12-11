@@ -65,28 +65,30 @@ interface ErrorHandler {
 
     companion object {
 
-        operator fun invoke(action: () -> Boolean): ErrorHandler = object: ErrorHandler {
+        operator fun invoke(action: (Throwable) -> Boolean): ErrorHandler = object: ErrorHandler {
 
-            override fun handle(error: Throwable): Boolean = action()
-
-        }
-
-        fun handled(action: () -> Unit): ErrorHandler = object: ErrorHandler {
-
-            override fun handle(error: Throwable): Boolean {
-                action()
-                return true
-            }
+            override fun handle(error: Throwable): Boolean = action(error)
 
         }
 
-        fun failed(action: () -> Unit): ErrorHandler = object: ErrorHandler {
+        fun handled(action: (Throwable) -> Unit): ErrorHandler = invoke {
+            action(it)
+            true
+        }
 
-            override fun handle(error: Throwable): Boolean {
-                action()
-                return false
-            }
+        fun justHandled(action: () -> Unit): ErrorHandler = invoke {
+            action()
+            true
+        }
 
+        fun failed(action: (Throwable) -> Unit): ErrorHandler = invoke {
+            action(it)
+            false
+        }
+
+        fun justFailed(action: () -> Unit): ErrorHandler = invoke {
+            action()
+            false
         }
 
     }
