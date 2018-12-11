@@ -1,11 +1,18 @@
 package me.sunnydaydev.modernrx
 
 import io.reactivex.*
+import io.reactivex.Observable
 import io.reactivex.disposables.Disposable
 
 interface ModernRx {
 
     class Disposer(internal val bag: DisposableBag)
+
+    class Simple(bag: DisposableBag = DisposableBag()): ModernRx {
+
+        override val modernRxDisposer: Disposer = Disposer(bag)
+
+    }
 
     val modernRxDisposer: ModernRx.Disposer
 
